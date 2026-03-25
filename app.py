@@ -1,105 +1,156 @@
 import streamlit as st
-import openai
-from datetime import date
+import google.generativeai as genai
+import sqlite3
+import hashlib
+import os
+import base64
+from docx import Document
+import io
+from dotenv import load_dotenv
 
-# Set your OpenAI API key
-openai.api_key = "your_openai_api_key"  
+# --- 1. CẤU HÌNH & BẢO MẬT ---
+load_dotenv()
+# Bảo mật: Ưu tiên lấy từ .env, nếu không có mới dùng dự phòng (nên giấu Key đi nhé bro)
+api_key = os.getenv("GOOGLE_API_KEY") 
+if not api_key:
+    st.error("⚠️ Thiếu API Key! Vui lòng kiểm tra file .env")
+    st.stop()
 
-# Define the system message for lesson generation
-system_message = """
-You are an AI English teacher who is really good and knows how to teach children of all standards. You will be provided with lesson strategy plan queries. You have to assist teachers and schools to make 
-new lesson plans that are more interactive for students. Explain all following processes in detail so teachers 
-will understand what you mean and what to do. Also provide a strategy so teachers will know step-wise when and what to show, for example, the video you provide.
+genai.configure(api_key=api_key)
+DB_NAME = 'smart_lesson.db'
 
-The lesson strategy plan query will be delimited with #### characters.
+# Tên Model chuẩn xác nhất cho Gemini hiện tại
+MODEL_NAME = 'gemini-3-flash' 
 
-You will get input in JSON format from users that are school teachers in the following format:
-'Lesson Title': <It will be the string that describes the lesson title>
-'Subject': <The user will give you the Subject name>
-'Grade': <The user will provide which grade the students are, so you have to explain it related to the respective grade and consider the student understanding at that age>
-'Duration': <Will be an integer, for example 1 or 2, based on the integer provided you have to write a lesson strategy plan. Keep in mind each session is 50 minutes>
-'Key vocabulary': <It will be in python list format that gives you an understanding of which part to focus on more.>
-'Supporting Materials and resources': <It will be the options like video, Microsoft office, etc. If any are available, you have to use that method or tools in strategy material. For video, you have to suggest a video or tutorial from the internet.>
+# --- 2. TỰ ĐỘNG KHỞI TẠO DATABASE ---
+def init_db_auto():
+    if not os.path.exists(DB_NAME):
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password_hash TEXT, fullname TEXT)')
+        c.execute('CREATE TABLE IF NOT EXISTS lesson_plans (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, title TEXT, grade INTEGER, subject TEXT, publisher TEXT, content_md TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+        # Tạo Admin mặc định
+        c.execute('INSERT OR IGNORE INTO users (username, password_hash, fullname) VALUES (?,?,?)', 
+                  ('admin', hashlib.sha256('123'.encode()).hexdigest(), 'Quản trị viên'))
+        conn.commit()
+        conn.close()
 
-You have to give a lesson plan that will help teachers to teach the topic in their classrooms.
+init_db_auto()
 
-NOTE: The output should be in a detailed lesson plan format for easy reading and application in a classroom.
-"""
-
-delimiter = "####"
-
-# Function to get a response from OpenAI based on messages
-@st.cache_data
-def get_completion_from_messages(messages, model="gpt-3.5-turbo", temperature=0.7, max_tokens=1900):
+# --- 3. TIỆN ÍCH ---
+def get_base64_image(image_path):
     try:
-        response = openai.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        st.error(f"An error occurred while generating the lesson plan: {str(e)}")
-        return None
+        with open(image_path, "rb") as f: return base64.b64encode(f.read()).decode()
+    except: return ""
 
-# Streamlit app starts here
-st.set_page_config(page_title="Lesson Plan Generator", page_icon="📚", layout="wide")
-st.title("📚 Lesson Plan Generator")
-st.write("Enter the details below to generate a comprehensive lesson plan.")
+LOGO_PATH = r"picture\logo.png" # Đường dẫn tương đối cho dễ quản lý trên Git
+img_base64 = get_base64_image(LOGO_PATH)
 
-# Create two columns for input fields
-col1, col2 = st.columns(2)
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-with col1:
-    lesson_title = st.text_input("Lesson Title", help="Enter the title of your lesson")
-    subject = st.text_input("Subject", help="Enter the subject of the lesson")
-    grade = st.number_input("Grade", min_value=1, max_value=12, step=1, help="Select the grade level")
+def get_db_connection():
+    return sqlite3.connect(DB_NAME)
 
-with col2:
-    duration = st.number_input("Duration (in hours)", min_value=1, max_value=10, step=1, help="Enter the duration of the lesson in hours")
-    key_vocabulary = st.text_input("Key Vocabulary", help="Enter key vocabulary words, separated by commas")
-    supporting_materials = st.text_area("Supporting Materials and Resources", help="List any supporting materials or resources, separated by commas")
+def export_to_docx(content, title):
+    doc = Document()
+    doc.add_heading(title, 0)
+    doc.add_paragraph(content)
+    bio = io.BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
 
-# When user submits the form
-if st.button("Generate Lesson Plan", type="primary"):
-    with st.spinner("Generating your lesson plan... This may take a moment."):
-        # Parse inputs
-        key_vocabulary_list = [item.strip() for item in key_vocabulary.split(",")]
-        materials_list = [item.strip() for item in supporting_materials.split(",")]
+# --- 4. GIAO DIỆN (Đã tối ưu CSS căn giữa & Xóa Top Bar) ---
+st.set_page_config(page_title="SmartLesson AI", page_icon=LOGO_PATH, layout="wide")
 
-        # Prepare user message for OpenAI
-        user_message = f""""Lesson Title": "{lesson_title}"\n"Subject": "{subject}"\n"Grade": "{grade}"
-        \n"Duration": "{duration}"\n"Key Vocabulary": {key_vocabulary_list}
-        \n"Supporting Materials and Resources": {materials_list}"""
+st.markdown(f"""
+    <style>
+    [data-testid="stHeader"] {{ display: none !important; }}
+    .block-container {{ padding-top: 1rem !important; margin-top: -20px; }}
+    footer {{ visibility: hidden !important; }}
+    .stAppDeployButton {{ display: none !important; }}
+    #MainMenu {{ visibility: hidden !important; }}
 
-        messages = [
-            {'role': 'system', 'content': system_message},
-            {'role': 'user', 'content': f"{delimiter}{user_message}{delimiter}"},
-        ]
+    html, body, [data-testid="stAppViewContainer"] {{ background-color: #FFFFFF !important; color: #6D28D9 !important; }}
 
-        # Get response from OpenAI
-        lesson_plan_response = get_completion_from_messages(messages)
+    [data-testid="stSidebarContent"] {{ display: flex; flex-direction: column; align-items: center; }}
+    .profile-container {{ display: flex; flex-direction: column; align-items: center; text-align: center; padding: 20px 0; }}
+    .sidebar-logo {{ width: 110px; mix-blend-mode: multiply; margin-bottom: 10px; }}
+    
+    [data-testid="stSidebar"] .stButton {{ display: flex; justify-content: center; width: 100%; }}
+    [data-testid="stSidebar"] .stButton>button {{ width: 160px !important; background-color: #7C3AED !important; color: white !important; border-radius: 20px !important; }}
+
+    .main-header {{ background-color: #F5F3FF; padding: 25px; border-radius: 15px; text-align: center; border-bottom: 4px solid #7C3AED; margin-bottom: 20px; }}
+    .logo-img-main {{ width: 160px; mix-blend-mode: multiply; }}
+
+    .lesson-content {{ color: #000000 !important; background-color: #FFFFFF; padding: 30px; border: 1px solid #E5E7EB; border-radius: 12px; line-height: 1.8; }}
+    .lesson-content * {{ color: #000000 !important; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 5. LOGIC ỨNG DỤNG ---
+if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
+
+if not st.session_state['logged_in']:
+    st.markdown(f"<div class='main-header'><img src='data:image/png;base64,{img_base64}' class='logo-img-main'><h1>SmartLesson AI</h1></div>", unsafe_allow_html=True)
+    t1, t2 = st.tabs(["🔐 Đăng nhập", "📝 Đăng ký"])
+    with t1:
+        u = st.text_input("Tên đăng nhập", key="lu")
+        p = st.text_input("Mật khẩu", type="password", key="lp")
+        if st.button("ĐĂNG NHẬP"):
+            conn = get_db_connection()
+            user = conn.execute("SELECT id, fullname FROM users WHERE username=? AND password_hash=?", (u, hash_password(p))).fetchone()
+            conn.close()
+            if user:
+                st.session_state.update({'logged_in': True, 'user_id': user[0], 'name': user[1]})
+                st.rerun()
+            else: st.error("Sai tài khoản.")
+else:
+    with st.sidebar:
+        st.markdown(f'<div class="profile-container"><img src="data:image/png;base64,{img_base64}" class="sidebar-logo"><div style="color:#6D28D9;">👤 <b>Thầy/Cô:</b><br>{st.session_state["name"]}</div></div>', unsafe_allow_html=True)
+        if st.button("Đăng xuất"):
+            st.session_state['logged_in'] = False
+            st.rerun()
+        st.divider()
+        menu = st.radio("Chức năng", ["📖 Soạn giáo án", "📁 Kho lưu trữ"])
+
+    if "Soạn giáo án" in menu:
+        st.markdown(f"<div class='main-header'><img src='data:image/png;base64,{img_base64}' class='logo-img-main'><h2>Thiết lập bài giảng mới</h2></div>", unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            grade = st.selectbox("Khối lớp", [10, 11, 12])
+            sub = st.selectbox("Môn học", ["Tiếng Anh", "Tin học", "Toán học", "Ngữ văn", "Vật lý", "Hóa học"])
+            topic = st.text_input("Tên bài học")
+        with c2:
+            pub = st.selectbox("Bộ sách", ["Global Success", "Kết Nối Tri Thức", "Cánh Diều", "Chân Trời Sáng Tạo"])
+            dur = st.number_input("Thời lượng (phút)", value=45)
+            style = st.selectbox("Phong cách", ["Chi tiết", "Trọng tâm"])
         
-        if lesson_plan_response:
-            st.success("Lesson Plan Generated Successfully!")
-            
-            # Display the lesson plan in a more structured way
-            st.subheader("📘 Lesson Plan")
-            st.markdown(lesson_plan_response, unsafe_allow_html=True)
+        notes = st.text_area("🗒️ Ghi chú yêu cầu cụ thể")
+        if st.button("BẮT ĐẦU SOẠN THẢO", icon="📝"):
+            if topic:
+                with st.spinner('⏳ AI đang soạn bài...'):
+                    try:
+                        model = genai.GenerativeModel(MODEL_NAME)
+                        prompt = f"Soạn giáo án {sub} {grade}, bài {topic}, sách {pub}. Chuẩn 5512. Yêu cầu: {notes}"
+                        response = model.generate_content(prompt)
+                        st.session_state['res'], st.session_state['top'] = response.text, topic
+                        st.markdown(f"<div class='lesson-content'>{response.text}</div>", unsafe_allow_html=True)
+                        conn = get_db_connection()
+                        conn.execute("INSERT INTO lesson_plans (user_id, title, grade, subject, publisher, content_md) VALUES (?,?,?,?,?,?)", (st.session_state['user_id'], topic, grade, sub, pub, response.text))
+                        conn.commit()
+                        conn.close()
+                    except Exception as e: st.error(f"Lỗi: {e}")
+        
+        if 'res' in st.session_state:
+            btn_data = export_to_docx(st.session_state['res'], st.session_state['top'])
+            st.download_button("📝 Tải file Word (.docx)", data=btn_data, file_name=f"GiaoAn_{st.session_state['top']}.docx")
 
-            # Option to download the lesson plan as a text file
-            st.download_button(
-                label="Download Lesson Plan (Text)",
-                data=lesson_plan_response,
-                file_name=f"lesson_plan_{date.today()}.txt",
-                mime="text/plain"
-            )
-        else:
-            st.warning("Failed to generate the lesson plan. Please try again.")
-
-st.markdown("<br><br>", unsafe_allow_html=True)
-
-# Footer
-st.markdown("---")
-st.markdown("Created with ❤️ by Your AI Lesson Planner")
+    elif "Kho lưu trữ" in menu:
+        st.header("📁 Lịch sử giáo án")
+        conn = get_db_connection()
+        plans = conn.execute("SELECT title, created_at, content_md FROM lesson_plans WHERE user_id=? ORDER BY created_at DESC", (st.session_state['user_id'],)).fetchall()
+        conn.close()
+        for p in plans:
+            with st.expander(f"📚 {p[0]} ({p[1]})"):
+                st.markdown(f"<div class='lesson-content'>{p[2]}</div>", unsafe_allow_html=True)
