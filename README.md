@@ -42,10 +42,11 @@ Dự án được thực hiện bởi nhóm học viên Cao học Công nghệ p
    git clone [https://github.com/OanhDiLam/Smartlesson-AI.git](https://github.com/OanhDiLam/Smartlesson-AI.git)
    cd Smartlesson-AI
 2. **Cài đặt thư viện**
+   ```bash
    pip install -r requirements.txt
+   
 Cấu hình: Tạo file .env và thêm GOOGLE_API_KEY=your_key_here.
-
-Khởi chạy:
+**Khởi chạy:**
 
 Bash
 streamlit run app.py
