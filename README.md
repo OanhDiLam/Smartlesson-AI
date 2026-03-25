@@ -45,13 +45,12 @@ Dự án được thực hiện bởi nhóm học viên Cao học Công nghệ p
    ```bash
    pip install -r requirements.txt
    
-Cấu hình: Tạo file .env và thêm GOOGLE_API_KEY=your_key_here.
-**Khởi chạy:**
+3. **Cấu hình: Tạo file .env và thêm GOOGLE_API_KEY=your_key_here.**
+4. **Khởi chạy:**
 
-Bash
-streamlit run app.py
-Dự án phục vụ mục đích nghiên cứu và hỗ trợ giảng dạy tại Việt Nam.
-
+    ```bash
+   streamlit run app.py
+**Dự án phục vụ mục đích nghiên cứu và hỗ trợ giảng dạy tại Việt Nam.**
 
 ---
 
