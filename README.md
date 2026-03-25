@@ -1,93 +1,54 @@
-# Lesson Plan Generator
+# 🚀 SmartLesson AI - Trợ Lý Soạn Giảng Thông Minh (AI Lesson Planner)
 
-## Overview
-The Lesson Plan Generator is a Streamlit-based web application that helps educators create comprehensive lesson plans using OpenAI's GPT model. This tool streamlines the process of lesson planning by generating structured, detailed plans based on user input.
+**SmartLesson AI** là một ứng dụng hỗ trợ giáo viên soạn thảo giáo án tự động dựa trên Trí tuệ nhân tạo (AI), giúp tối ưu hóa thời gian soạn bài và đảm bảo cấu trúc sư phạm chuẩn theo **Công văn 5512** của Bộ Giáo dục & Đào tạo.
 
-## Features
-- Interactive web interface for inputting lesson details
-- Generates detailed lesson plans including learning outcomes, experiences, and assessments
-- Utilizes OpenAI's GPT model for intelligent content generation
-- Allows downloading of generated lesson plans in JSON format
+---
 
-## Prerequisites
-Before you begin, ensure you have met the following requirements:
-- Python 3.7 or higher installed
-- An OpenAI API key (you can obtain one from [OpenAI's website](https://openai.com))
+## 👥 Nhóm Thực Hiện (Project Team)
+Dự án được thực hiện bởi nhóm học viên Cao học Công nghệ phần mềm:
+* **Thạch Lâm Oanh Đi (Team Leader):** * Thiết kế kiến trúc hệ thống (System Architecture).
+    * Tích hợp và tối ưu hóa Prompt cho **Google Gemini 3 Flash API**.
+    * Quản trị Cơ sở dữ liệu **SQLite** & Bảo mật người dùng (SHA-256).
+* **Phạm Trần Minh Thuận (Frontend Developer):**
+    * Thiết kế giao diện người dùng (UX/UI) trên nền tảng **Streamlit**.
+    * Xử lý module xuất bản định dạng văn bản chuyên nghiệp (.docx).
+    * Kiểm thử hệ thống và xây dựng tài liệu hướng dẫn.
 
-## Installation
+---
 
-1. Clone this repository or download the source code.
+## 🛠️ Công Nghệ Sử Dụng (Tech Stack)
+* **Ngôn ngữ:** Python 3.10+
+* **Giao diện:** Streamlit (Tông màu chủ đạo: Trắng - Tím Sư phạm)
+* **Trí tuệ nhân tạo:** Google Gemini 1.5/3 Flash (Xử lý ngôn ngữ tự nhiên)
+* **Cơ sở dữ liệu:** SQLite3 (Lưu trữ tài khoản & Lịch sử soạn giảng)
+* **Thư viện chính:** * `google-generativeai`: Kết nối bộ não AI.
+    * `python-docx`: Trình xuất bản giáo án chuẩn Word.
+    * `python-dotenv`: Bảo mật thông tin cấu hình và API Key.
 
-2. Navigate to the project directory:
-   ```
-   cd path/to/lesson-plan-generator
-   ```
+---
 
-3. Install the required dependencies:
-   ```
+## ✨ Tính Năng Nổi Bật
+1. **Quản lý người dùng:** Đăng ký/Đăng nhập riêng tư, bảo mật dữ liệu giáo án cá nhân.
+2. **Soạn bài đa năng:** Hỗ trợ nhiều môn học (Tiếng Anh, Tin học, Toán...) và các khối lớp (10, 11, 12).
+3. **Tùy chỉnh linh hoạt:** Lựa chọn bộ sách (Cánh Diều, Kết nối tri thức...) và phong cách soạn thảo (Trọng tâm/Chi tiết).
+4. **Kho lưu trữ thông minh:** Tự động lưu và cho phép xem lại các giáo án đã soạn trong quá khứ.
+5. **Xuất bản nhanh chóng:** Tải giáo án về máy dưới dạng file Word (.docx) chỉ với một cú click.
+
+---
+
+## 🏁 Hướng Dẫn Cài Đặt (Setup)
+1. **Clone Repo:**
+   ```bash
+   git clone [https://github.com/OanhDiLam/Smartlesson-AI.git](https://github.com/OanhDiLam/Smartlesson-AI.git)
+   cd Smartlesson-AI
+2. **Cài đặt thư viện**
+   ```bash
    pip install -r requirements.txt
-   ```
+   
+3. **Cấu hình: Tạo file .env và thêm GOOGLE_API_KEY=your_key_here.**
+4. **Khởi chạy:**
 
-## Setting Up the OpenAI API Key
-
-You have two options for providing your OpenAI API key:
-
-1. **Environment Variable (Recommended):**
-   - On Windows:
-     ```
-     set OPENAI_API_KEY=your-api-key-here
-     ```
-   - On macOS or Linux:
-     ```
-     export OPENAI_API_KEY=your-api-key-here
-     ```
-
-2. **User Input:**
-   If you don't set the environment variable, the app will prompt you to enter the API key when you run it.
-
-## Usage
-
-1. Run the Streamlit app:
-   ```
+    ```bash
    streamlit run app.py
-   ```
+**Dự án phục vụ mục đích nghiên cứu và hỗ trợ giảng dạy tại Việt Nam.**
 
-2. Open your web browser and go to the address shown in the terminal (usually `http://localhost:8501`).
-
-3. If you didn't set the API key as an environment variable, you'll be prompted to enter it.
-
-4. Fill in the lesson details in the provided form:
-   - Lesson Title
-   - Subject
-   - Grade
-   - Duration
-   - Key Vocabulary
-   - Supporting Materials and Resources
-
-5. Click the "Generate Lesson Plan" button.
-
-6. Review the generated lesson plan displayed on the page.
-
-7. Optionally, download the lesson plan as a JSON file using the provided button.
-
-## Customization
-
-You can customize the system message or other parameters in the `app.py` file to adjust the behavior of the lesson plan generation.
-
-## Troubleshooting
-
-- If you encounter any issues with the OpenAI API, ensure that your API key is correct and that you have sufficient credits.
-- For any other issues, check the console output for error messages.
-
-## Contributing
-
-Contributions to the Lesson Plan Generator are welcome. Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- OpenAI for providing the GPT model
-- Streamlit for the web application framework
