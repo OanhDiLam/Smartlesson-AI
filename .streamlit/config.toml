@@ -1,0 +1,21 @@
+[theme]
+# Màu tím chủ đạo (phù hợp với logo sư phạm)
+primaryColor = "#7C3AED"
+
+# Màu nền chính (Trắng)
+backgroundColor = "#FFFFFF"
+
+# Màu nền phụ (Xám nhạt cho Sidebar)
+secondaryBackgroundColor = "#F3F4F6"
+
+# Màu chữ
+textColor = "#1F2937"
+
+# Ép hệ thống luôn dùng chế độ sáng
+base = "light"
+
+[server]
+# Giúp app chạy mượt hơn trên Docker
+headless = true
+enableCORS = false
+enableXsrfProtection = false
