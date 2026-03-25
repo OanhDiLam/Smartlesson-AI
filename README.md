@@ -52,14 +52,3 @@ Dự án được thực hiện bởi nhóm học viên Cao học Công nghệ p
    streamlit run app.py
 **Dự án phục vụ mục đích nghiên cứu và hỗ trợ giảng dạy tại Việt Nam.**
 
----
-
-### 📦 Tặng thêm bro: File `requirements.txt` chuyên nghiệp
-Để giáo viên tải về chỉ cần gõ 1 lệnh là cài xong hết, bro hãy tạo thêm một file tên là **`requirements.txt`** (nếu chưa có nội dung) và dán đống này vào:
-
-```text
-streamlit
-google-generativeai
-python-dotenv
-python-docx
-pandas
