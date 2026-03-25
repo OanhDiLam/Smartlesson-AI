@@ -1,0 +1,14 @@
+# Chặn file chứa API Key (Quan trọng nhất)
+.env
+
+# Chặn các file rác của Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Chặn file database (Nếu bro muốn mỗi máy tự tạo DB riêng)
+*.db
+
+# Chặn thư mục ảo
+venv/
+.venv/
