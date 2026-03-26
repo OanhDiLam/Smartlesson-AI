@@ -2,3 +2,4 @@ streamlit>=1.35.0
 google-generativeai>=0.8.0  # Đảm bảo bản mới để nhận diện được model 3.0
 python-dotenv
 python-docx
+reportlab

@@ -1,14 +1,16 @@
-# Chặn file chứa API Key (Quan trọng nhất)
+# 1. Bảo mật: Chặn file chứa API Key
 .env
 
-# Chặn các file rác của Python
+# 2. Dữ liệu: Chặn file database (Để mỗi máy tự sinh DB riêng, không lộ giáo án)
+*.db
+
+# 3. Python: Chặn các file biên dịch rác
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Chặn file database (Nếu bro muốn mỗi máy tự tạo DB riêng)
-*.db
-
-# Chặn thư mục ảo
+# 4. Môi trường: Chặn thư mục ảo
 venv/
-.venv/
+.env/
+storage/*.db
+!storage/smart_lesson_final_v2.db
