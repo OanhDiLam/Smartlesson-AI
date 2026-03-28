@@ -1,218 +1,185 @@
 import streamlit as st
 import google.generativeai as genai
-import sqlite3
-import hashlib
-import os
-import base64
-from docx import Document
-import io
+import sqlite3, hashlib, os, base64, time
 from dotenv import load_dotenv
-import warnings
+from docx import Document
+from io import BytesIO
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from docx.shared import Pt
+from docx.oxml.ns import qn
 
-# Tắt các cảnh báo không cần thiết để log Docker sạch sẽ
-warnings.filterwarnings("ignore", category=FutureWarning)
+# --- IMPORT MODULE GIAO DIỆN ---
+import styles
 
 # --- 1. CẤU HÌNH HỆ THỐNG ---
 load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-if not api_key:
-    st.error("⚠️ Không tìm thấy API Key! Hãy kiểm tra file .env hoặc biến môi trường.")
-    st.stop()
+st.set_page_config(
+    page_title="SmartLesson AI",
+    layout="wide",
+    page_icon="picture/logo.png"
+)
 
-genai.configure(api_key=api_key)
-DB_NAME = 'smart_lesson.db'
-MODEL_NAME = 'gemini-2.0-flash' # Bản ổn định nhất cho giáo dục
+MODEL_NAME = 'models/gemini-flash-latest' 
 
-# --- 2. TIỆN ÍCH HỆ THỐNG ---
-def safe_rerun():
-    """Hàm bổ trợ để chạy được trên cả Streamlit cũ và mới"""
-    try:
-        st.rerun()
-    except AttributeError:
-        st.experimental_rerun()
+# --- 2. QUẢN LÝ DATABASE ---
+DB_DIR = "storage"
+DB_PATH = os.path.join(DB_DIR, "smart_lesson_official_v4.db") 
+if not os.path.exists(DB_DIR): os.makedirs(DB_DIR)
 
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, 
-                  password_hash TEXT, fullname TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS lesson_plans 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, title TEXT, 
-                  grade INTEGER, subject TEXT, publisher TEXT, content_md TEXT, 
-                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    # Tạo Admin mặc định: admin / 123
-    admin_hash = hashlib.sha256('123'.encode()).hexdigest()
-    c.execute('INSERT OR IGNORE INTO users (username, password_hash, fullname) VALUES (?,?,?)', 
-              ('admin', admin_hash, 'Quản trị viên Hệ thống'))
-    conn.commit()
-    conn.close()
+def run_query(query, params=(), fetch=False):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.execute(query, params)
+        if fetch: return cursor.fetchall()
+        conn.commit()
 
-init_db()
+# Khởi tạo các bảng dữ liệu
+run_query('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password_hash TEXT, fullname TEXT)')
+run_query('CREATE TABLE IF NOT EXISTS lessons (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, subject TEXT, grade TEXT, book_series TEXT, lesson_title TEXT, duration TEXT, content_md TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
 
-# Xử lý Logo cho Docker (Dùng gạch chéo xuôi)
-LOGO_PATH = "picture/logo.png"
-def get_img_64(path):
-    try:
+# --- 3. CÁC HÀM HỖ TRỢ (BASE64 & XUẤT FILE) ---
+def get_b64(path):
+    if os.path.exists(path):
         with open(path, "rb") as f: return base64.b64encode(f.read()).decode()
-    except: return ""
-img_64 = get_img_64(LOGO_PATH)
+    return ""
 
-def export_to_docx(content, title):
+logo_64 = get_b64("picture/logo.png")
+
+def export_word(title, content):
     doc = Document()
-    doc.add_heading(title, 0)
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Times New Roman'
+    font.size = Pt(13)
+    r = style.element.rPr.get_or_add_rFonts()
+    for tag in ['w:eastAsia', 'w:ascii', 'w:hAnsi', 'w:cs']: r.set(qn(tag), 'Times New Roman')
+    doc.add_heading(title.upper(), 0)
+    doc.add_paragraph(content)
+    bio = BytesIO(); doc.save(bio); return bio.getvalue()
+
+def export_pdf(title, content):
+    bio = BytesIO(); p = canvas.Canvas(bio, pagesize=A4)
+    p.setFont("Helvetica-Bold", 16); p.drawString(100, 800, "GIAO AN: " + title)
+    p.setFont("Helvetica", 12); y = 770
     for line in content.split('\n'):
-        doc.add_paragraph(line)
-    bio = io.BytesIO()
-    doc.save(bio)
-    return bio.getvalue()
+        if y < 50: p.showPage(); p.setFont("Helvetica", 12); y = 800
+        p.drawString(100, y, line[:80]); y -= 20
+    p.save(); return bio.getvalue()
 
-# --- 3. GIAO DIỆN (UI/UX) ---
-st.set_page_config(page_title="SmartLesson AI", page_icon=LOGO_PATH, layout="wide")
+# --- 4. ÁP DỤNG GIAO DIỆN TỪ STYLES.PY ---
+styles.apply_custom_css()
 
-# CSS "Hard-code" để ép giao diện luôn đẹp bất kể chế độ Dark/Light Mode của trình duyệt
-st.markdown(f"""
-    <style>
-    /* Ép nền trắng toàn trang */
-    [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {{
-        background-color: #FFFFFF !important;
-        color: #1F2937 !important;
-    }}
+# --- 5. LOGIC ĐĂNG NHẬP & ĐĂNG KÝ ---
+if 'auth' not in st.session_state: st.session_state.auth = False
 
-    /* Ép màu cho các ô nhập liệu - Dùng Selector mạnh nhất */
-    div[data-baseweb="input"] > div, 
-    div[data-baseweb="select"] > div, 
-    div[data-baseweb="textarea"] > div {{
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
-        border: 2px solid #7C3AED !important; /* Viền tím đậm cho rõ ràng */
-    }}
-
-    /* Sửa lỗi chữ trong ô nhập liệu bị trắng (khó nhìn) */
-    input, textarea, span {{
-        color: #000000 !important;
-        -webkit-text-fill-color: #000000 !important;
-    }}
-
-    /* Màu chữ tiêu đề (Labels) */
-    label p {{
-        color: #4B5563 !important;
-        font-weight: bold !important;
-        font-size: 1.1rem !important;
-    }}
-
-    /* Nút bấm "Xác nhận" */
-    .stButton > button {{
-        width: 100% !important;
-        background: #7C3AED !important;
-        color: white !important;
-        border: none !important;
-        padding: 15px !important;
-        font-weight: bold !important;
-        font-size: 1.2rem !important;
-    }}
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 4. LOGIC CHÍNH ---
-if 'auth' not in st.session_state: st.session_state['auth'] = False
-
-if not st.session_state['auth']:
-    # MÀN HÌNH ĐĂNG NHẬP
-    st.markdown(f"""<div class='header-box'>
-        <img src='data:image/png;base64,{img_64}' style='width:120px; filter: brightness(0) invert(1);'>
-        <h1>SmartLesson AI</h1>
-        <p>Hệ thống trợ lý soạn bài giảng theo chuẩn Công văn 5512</p>
-    </div>""", unsafe_allow_html=True)
-    
-    t1, t2 = st.tabs(["🔐 Đăng nhập", "📝 Đăng ký"])
-    with t1:
-        u = st.text_input("Tên đăng nhập", key="u_in")
-        p = st.text_input("Mật khẩu", type="password", key="p_in")
-        if st.button("XÁC NHẬN ĐĂNG NHẬP", use_container_width=True):
-            conn = sqlite3.connect(DB_NAME)
-            user = conn.execute("SELECT id, fullname FROM users WHERE username=? AND password_hash=?", 
-                                (u, hashlib.sha256(p.encode()).hexdigest())).fetchone()
-            conn.close()
-            if user:
-                st.session_state.update({'auth': True, 'uid': user[0], 'uname': user[1]})
-                safe_rerun()
-            else: st.error("Tài khoản hoặc mật khẩu không chính xác!")
-
-    with t2:
-        nu = st.text_input("Tên đăng nhập mới")
-        nn = st.text_input("Họ tên giáo viên")
-        np = st.text_input("Mật khẩu mới", type="password")
-        if st.button("TẠO TÀI KHOẢN MỚI", use_container_width=True):
-            try:
-                conn = sqlite3.connect(DB_NAME)
-                conn.execute("INSERT INTO users (username, password_hash, fullname) VALUES (?,?,?)", 
-                             (nu, hashlib.sha256(np.encode()).hexdigest(), nn))
-                conn.commit(); conn.close()
-                st.success("✅ Đăng ký thành công! Hãy quay lại tab Đăng nhập.")
-            except: st.error("Tên đăng nhập này đã có người sử dụng.")
-
+if not st.session_state.auth:
+    #st.markdown("<div style='height: 50px;'></div>", unsafe_allow_html=True)
+    _, col, _ = st.columns([1, 1.3, 1])
+    with col:
+        # Gọi hàm hiển thị Logo và Tiêu đề tím từ styles.py
+        styles.render_login_logo(logo_64) 
+        
+        tab_login, tab_reg = st.tabs(["🔐 Đăng nhập", "📝 Đăng ký"])
+        
+        with tab_login:
+            u = st.text_input("Tên đăng nhập", key="login_username")
+            p = st.text_input("Mật khẩu", type="password", key="login_password")
+            if st.button("XÁC NHẬN ĐĂNG NHẬP", use_container_width=True):
+                phash = hashlib.sha256(p.encode()).hexdigest()
+                res = run_query("SELECT id, fullname FROM users WHERE username=? AND password_hash=?", (u, phash), True)
+                if res:
+                    st.session_state.update({'auth': True, 'uid': res[0][0], 'name': res[0][1]})
+                    st.rerun()
+                else: st.error("Tài khoản hoặc mật khẩu không chính xác!")
+                
+        with tab_reg:
+            nu = st.text_input("Tạo tên người dùng", key="reg_username")
+            nn = st.text_input("Nhập họ và tên giáo viên", key="reg_fullname")
+            np = st.text_input("Tạo mật khẩu bảo mật", type="password", key="reg_password")
+            if st.button("HOÀN TẤT ĐĂNG KÝ", use_container_width=True):
+                try:
+                    run_query("INSERT INTO users (username, password_hash, fullname) VALUES (?,?,?)", (nu, hashlib.sha256(np.encode()).hexdigest(), nn))
+                    st.success("Đăng ký thành công! Mời thầy đăng nhập.")
+                except: st.error("Tên đăng nhập này đã được sử dụng!")
 else:
-    # MÀN HÌNH LÀM VIỆC
+    # --- 6. GIAO DIỆN CHÍNH SAU KHI ĐĂNG NHẬP ---
     with st.sidebar:
-        st.markdown(f"""<div style='text-align:center; padding:20px;'>
-            <img src='data:image/png;base64,{img_64}' style='width:100px;'>
-            <h3 style='color:#7C3AED;'>Thầy/Cô: {st.session_state['uname']}</h3>
-        </div>""", unsafe_allow_html=True)
-        menu = st.radio("CHỨC NĂNG", ["📝 Soạn giáo án mới", "📁 Kho lưu trữ giáo án"])
-        st.divider()
-        if st.button("🚪 Đăng xuất", use_container_width=True):
-            st.session_state['auth'] = False
-            safe_rerun()
-
-    if "Soạn giáo án" in menu:
-        st.markdown("<div class='header-box'><h2>Thiết lập bài giảng thông minh</h2></div>", unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            grade = st.selectbox("Khối lớp", [10, 11, 12])
-            sub = st.selectbox("Môn học", ["Tin học", "Tiếng Anh", "Toán học", "Ngữ văn", "Vật lý", "Hóa học"])
-            topic = st.text_input("Tên bài học cần soạn")
-        with c2:
-            pub = st.selectbox("Bộ sách", ["Cánh Diều", "Kết Nối Tri Thức", "Chân Trời Sáng Tạo"])
-            dur = st.number_input("Thời lượng (phút)", value=45, step=45)
-            style = st.selectbox("Phong cách", ["Chi tiết từng hoạt động", "Trọng tâm kiến thức"])
+        # Hiển thị Logo Sidebar
+        st.markdown(f'''
+            <div class="logo-container">
+                <center><img src="data:image/png;base64,{logo_64}" class="sidebar-img"></center>
+            </div>
+            <h3 class="sidebar-name-label">GV: {st.session_state.name}</h3>
+        ''', unsafe_allow_html=True)
         
-        notes = st.text_area("🗒️ Ghi chú thêm cho AI (ví dụ: Tập trung vào thực hành, tổ chức trò chơi...)")
+        menu_choice = st.radio("CHỨC NĂNG HỆ THỐNG", ["📝 Soạn giáo án mới", "📁 Lịch sử bài dạy"])
         
-        if st.button("🚀 BẮT ĐẦU SOẠN THẢO VỚI GEMINI AI", use_container_width=True):
-            if not topic: st.warning("Vui lòng nhập tên bài học.")
-            else:
-                with st.spinner("AI đang nghiên cứu chương trình và soạn thảo..."):
-                    try:
-                        model = genai.GenerativeModel(MODEL_NAME)
-                        prompt = f"""
-                        Đóng vai chuyên gia giáo dục. Soạn giáo án môn {sub}, lớp {grade}, bài: {topic}. 
-                        Sách: {pub}. Thời lượng: {dur} phút. Phong cách: {style}. 
-                        Yêu cầu: Tuân thủ cấu trúc Công văn 5512 (Mục tiêu, Thiết bị, Hoạt động: Khởi động, Kiến thức mới, Luyện tập, Vận dụng). 
-                        Ghi chú thêm: {notes}
-                        """
-                        res = model.generate_content(prompt).text
-                        st.session_state['cur_res'], st.session_state['cur_top'] = res, topic
-                        
-                        conn = sqlite3.connect(DB_NAME)
-                        conn.execute("INSERT INTO lesson_plans (user_id, title, grade, subject, publisher, content_md) VALUES (?,?,?,?,?,?)", 
-                                     (st.session_state['uid'], topic, grade, sub, pub, res))
-                        conn.commit(); conn.close()
-                    except Exception as e: st.error(f"Lỗi AI: {e}")
+        # Nút xuất file nhanh nếu đã có kết quả soạn thảo
+        if 'last_res' in st.session_state:
+            st.markdown("---")
+            st.markdown("### 📥 XUẤT GIÁO ÁN")
+            st.download_button("📄 Tải bản Word", data=export_word(st.session_state.lesson_title, st.session_state.last_res), file_name=f"GiaoAn_{st.session_state.lesson_title}.docx", use_container_width=True)
+            st.download_button("📑 Tải bản PDF", data=export_pdf(st.session_state.lesson_title, st.session_state.last_res), file_name=f"GiaoAn_{st.session_state.lesson_title}.pdf", use_container_width=True)
+        
+        st.markdown("---")
+        if st.button("🚪 ĐĂNG XUẤT", use_container_width=True):
+            st.session_state.auth = False
+            st.rerun()
 
-        if 'cur_res' in st.session_state:
-            st.markdown(f"<div class='lesson-output'>{st.session_state['cur_res']}</div>", unsafe_allow_html=True)
-            doc = export_to_docx(st.session_state['cur_res'], st.session_state['cur_top'])
-            st.download_button("📥 Tải file Word (.docx)", data=doc, file_name=f"GiaoAn_{st.session_state['cur_top']}.docx", use_container_width=True)
+    # --- 7. CHỨC NĂNG SOẠN GIÁO ÁN ---
+    if menu_choice == "📝 Soạn giáo án mới":
+        st.markdown('''
+    <div class="gemini-banner">
+        <h1>Thiết kế bài dạy thông minh</h1>
+    </div>
+''', unsafe_allow_html=True)
+        
+        with st.form("main_lesson_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                mon = st.selectbox("Chọn môn học", ["Tin học", "Toán học", "Ngữ văn", "Tiếng Anh", "Vật lý", "Hóa học"])
+                lop = st.selectbox("Chọn khối lớp", [str(i) for i in range(1, 13)])
+            with col2:
+                sach = st.selectbox("Bộ sách giáo khoa", ["Cánh Diều", "Kết nối tri thức", "Chân trời sáng tạo"])
+                ten = st.text_input("Nhập tên bài dạy")
+                tg = st.text_input("Thời lượng (Ví dụ: 2 tiết)")
+            
+            note = st.text_area("Yêu cầu sư phạm cụ thể (Phương pháp dạy, hoạt động nhóm...)", height=120)
+            
+            if st.form_submit_button("BẮT ĐẦU SOẠN THẢO BẰNG AI", use_container_width=True):
+                if ten:
+                    with st.spinner("AI đang phân tích chương trình và soạn thảo..."):
+                        try:
+                            # Cấu trúc prompt chuẩn 5512
+                            prompt = f"Hãy soạn giáo án môn {mon} lớp {lop} theo sách {sach}, bài dạy: {ten}. Yêu cầu thêm: {note}. Trình bày theo đúng cấu trúc Công văn 5512 của Bộ Giáo dục."
+                            res = genai.GenerativeModel(MODEL_NAME).generate_content(prompt)
+                            
+                            st.session_state.update({'last_res': res.text, 'lesson_title': ten})
+                            
+                            # Lưu vào lịch sử
+                            run_query("INSERT INTO lessons (user_id, subject, grade, book_series, lesson_title, duration, content_md) VALUES (?,?,?,?,?,?,?)", 
+                                     (st.session_state.uid, mon, lop, sach, ten, tg, res.text))
+                            st.rerun()
+                        except Exception as e: st.error(f"Lỗi hệ thống AI: {str(e)}")
+                else: st.warning("Thầy vui lòng điền Tên bài dạy trước khi bắt đầu!")
 
+        # Hiển thị kết quả giáo án vừa tạo
+        if 'last_res' in st.session_state:
+            st.markdown("### 📄 NỘI DUNG GIÁO ÁN CHI TIẾT")
+            st.info(st.session_state.last_res)
+
+    # --- 8. CHỨC NĂNG LỊCH SỬ ---
     else:
-        st.markdown("<div class='header-box'><h2>📁 Kho lưu trữ giáo án cá nhân</h2></div>", unsafe_allow_html=True)
-        conn = sqlite3.connect(DB_NAME)
-        plans = conn.execute("SELECT title, created_at, content_md FROM lesson_plans WHERE user_id=? ORDER BY created_at DESC", (st.session_state['uid'],)).fetchall()
-        conn.close()
-        for p in plans:
-            with st.expander(f"📚 {p[0]} (Soạn ngày: {p[1]})"):
-                st.markdown(f"<div class='lesson-output'>{p[2]}</div>", unsafe_allow_html=True)
-                doc = export_to_docx(p[2], p[0])
-                st.download_button(f"Tải lại bài {p[0]}", data=doc, file_name=f"Re_{p[0]}.docx", key=f"dl_{p[1]}")
+        st.markdown("## 📁 DANH SÁCH GIÁO ÁN ĐÃ SOẠN")
+        history = run_query("SELECT lesson_title, created_at, content_md, id FROM lessons WHERE user_id=? ORDER BY id DESC", (st.session_state.uid,), True)
+        
+        if not history:
+            st.info("Thầy chưa thực hiện soạn giáo án nào trên hệ thống.")
+        else:
+            for item in history:
+                with st.expander(f"📙 Bài: {item[0]} (Ngày soạn: {item[1]})"):
+                    st.markdown(item[2])
+                    st.download_button("Tải lại bản Word", data=export_word(item[0], item[2]), 
+                                     file_name=f"ReDownload_{item[0]}.docx", key=f"re_dl_{item[3]}")

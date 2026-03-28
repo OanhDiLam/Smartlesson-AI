@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  smartlesson-app:
+    build: .
+    container_name: smartlesson_container
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      # Ánh xạ thư mục storage để giữ lại database khi tắt container
+      - ./storage:/app/storage
+      # Nếu thầy muốn chỉnh sửa code và thấy thay đổi ngay lập tức (Hot Reload)
+      - .:/app
+    restart: always
+
+volumes:
+  storage:

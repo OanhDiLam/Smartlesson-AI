@@ -1,0 +1,16 @@
+# 1. Bảo mật: Chặn file chứa API Key
+.env
+
+# 2. Dữ liệu: Chặn file database (Để mỗi máy tự sinh DB riêng, không lộ giáo án)
+*.db
+
+# 3. Python: Chặn các file biên dịch rác
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 4. Môi trường: Chặn thư mục ảo
+venv/
+.env/
+storage/*.db
+!storage/smart_lesson_final_v2.db
