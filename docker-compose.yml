@@ -1,19 +1,70 @@
 version: '3.8'
 
 services:
-  smartlesson-app:
-    build: .
-    container_name: smartlesson_container
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartlesson_frontend
     ports:
       - "8501:8501"
     env_file:
       - .env
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      LESSON_SERVICE_URL: http://lesson-service:8002
+      AI_SERVICE_URL: http://ai-service:8003
+    depends_on:
+      - auth-service
+      - lesson-service
+      - ai-service
     volumes:
-      # Ánh xạ thư mục storage để giữ lại database khi tắt container
       - ./storage:/app/storage
-      # Nếu thầy muốn chỉnh sửa code và thấy thay đổi ngay lập tức (Hot Reload)
       - .:/app
     restart: always
 
-volumes:
-  storage:
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth_service/Dockerfile
+    container_name: smartlesson_auth_service
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /app/storage/smart_lesson_official_v4.db
+    volumes:
+      - ./storage:/app/storage
+      - .:/app
+    restart: always
+
+  lesson-service:
+    build:
+      context: .
+      dockerfile: services/lesson_service/Dockerfile
+    container_name: smartlesson_lesson_service
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /app/storage/smart_lesson_official_v4.db
+    volumes:
+      - ./storage:/app/storage
+      - .:/app
+    restart: always
+
+  ai-service:
+    build:
+      context: .
+      dockerfile: services/ai_service/Dockerfile
+    container_name: smartlesson_ai_service
+    ports:
+      - "8003:8003"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    restart: always
+
